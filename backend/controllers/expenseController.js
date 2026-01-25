@@ -8,10 +8,32 @@ const createExpense = async (req, res) => {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const expense = await Expense.create({
-      ...req.body,
-      userId: req.user._id
-    });
+    const { title, amount, category, date, notes, isRecurring, recurringInterval } = req.body;
+
+    const expenseData = {
+      title,
+      amount,
+      category,
+      date,
+      notes,
+      userId: req.user._id,
+      isRecurring: isRecurring === 'true' || isRecurring === true || false,
+      receiptImage: req.file ? `uploads/${req.file.filename}` : null
+    };
+
+    if (isRecurring) {
+      expenseData.recurringInterval = recurringInterval;
+      const nextDate = new Date(date);
+      switch (recurringInterval) {
+        case 'daily': nextDate.setDate(nextDate.getDate() + 1); break;
+        case 'weekly': nextDate.setDate(nextDate.getDate() + 7); break;
+        case 'monthly': nextDate.setMonth(nextDate.getMonth() + 1); break;
+        case 'yearly': nextDate.setFullYear(nextDate.getFullYear() + 1); break;
+      }
+      expenseData.nextRecurringDate = nextDate;
+    }
+
+    const expense = await Expense.create(expenseData);
 
     res.status(201).json(expense);
   } catch (error) {
@@ -22,9 +44,9 @@ const createExpense = async (req, res) => {
 const getExpenses = async (req, res) => {
   try {
     const { category, startDate, endDate, search, page = 1, limit = 10 } = req.query;
-    
+
     const query = { userId: req.user._id };
-    
+
     if (category) query.category = category;
     if (startDate && endDate) {
       query.date = { $gte: new Date(startDate), $lte: new Date(endDate) };
@@ -92,7 +114,7 @@ const deleteExpense = async (req, res) => {
 const getAnalytics = async (req, res) => {
   try {
     const userId = req.user._id;
-    
+
     // Category breakdown
     const categoryBreakdown = await Expense.aggregate([
       { $match: { userId } },
@@ -115,9 +137,9 @@ const getAnalytics = async (req, res) => {
     ]);
 
     // Predictive analysis - average spending trend
-    const avgMonthlySpend = monthlyTrends.length > 0 ? 
+    const avgMonthlySpend = monthlyTrends.length > 0 ?
       monthlyTrends.reduce((sum, month) => sum + month.total, 0) / monthlyTrends.length : 0;
-    
+
     const predictedNextMonth = avgMonthlySpend * 1.05; // 5% growth prediction
 
     // Weekly spending pattern
@@ -156,11 +178,11 @@ const getAnalytics = async (req, res) => {
 
     // Spending insights
     const insights = {
-      highestSpendingDay: weeklyPattern.reduce((max, day) => 
+      highestSpendingDay: weeklyPattern.reduce((max, day) =>
         day.avgSpending > max.avgSpending ? day : max, weeklyPattern[0] || {}),
       predictedNextMonth,
       avgDailySpend: (monthlyExpenses[0]?.total || 0) / new Date().getDate(),
-      spendingTrend: monthlyTrends.length >= 2 ? 
+      spendingTrend: monthlyTrends.length >= 2 ?
         ((monthlyTrends[0].total - monthlyTrends[1].total) / monthlyTrends[1].total * 100).toFixed(1) : 0
     };
 

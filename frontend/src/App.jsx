@@ -2,20 +2,26 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
+import NetworkStatus from './components/NetworkStatus';
 import Layout from './layouts/Layout';
 import LandingPage from './pages/LandingPage';
 import Dashboard from './pages/Dashboard';
 import Expenses from './pages/Expenses';
 import Budgets from './pages/Budgets';
 import Analytics from './pages/Analytics';
+
 import Profile from './pages/Profile';
+import Income from './pages/Income';
+import CalendarView from './pages/CalendarView';
+import Bills from './pages/Bills';
+import Goals from './pages/Goals';
 
 function App() {
   const isAuthenticated = localStorage.getItem('token');
 
   return (
     <AuthProvider>
-      <Router>
+      <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <div className="App">
           <Routes>
             <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" /> : <LandingPage />} />
@@ -44,6 +50,34 @@ function App() {
               <ProtectedRoute>
                 <Layout>
                   <Analytics />
+                </Layout>
+              </ProtectedRoute>
+            } />
+            <Route path="/income" element={
+              <ProtectedRoute>
+                <Layout>
+                  <Income />
+                </Layout>
+              </ProtectedRoute>
+            } />
+            <Route path="/calendar" element={
+              <ProtectedRoute>
+                <Layout>
+                  <CalendarView />
+                </Layout>
+              </ProtectedRoute>
+            } />
+            <Route path="/bills" element={
+              <ProtectedRoute>
+                <Layout>
+                  <Bills />
+                </Layout>
+              </ProtectedRoute>
+            } />
+            <Route path="/goals" element={
+              <ProtectedRoute>
+                <Layout>
+                  <Goals />
                 </Layout>
               </ProtectedRoute>
             } />

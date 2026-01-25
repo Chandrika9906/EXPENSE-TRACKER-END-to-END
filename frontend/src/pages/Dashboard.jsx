@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react';
-import { expenseService } from '../services/authService';
-import { DollarSign, TrendingUp, Calendar, Tag, Plus, ArrowUpRight, ArrowDownRight, Clock, Target, AlertTriangle } from 'lucide-react';
+import { expenseService, incomeService } from '../services/authService';
+import { DollarSign, TrendingUp, Calendar, Tag, Plus, ArrowUpRight, ArrowDownRight, Clock, Target, AlertTriangle, Wallet } from 'lucide-react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { Link } from 'react-router-dom';
 import AIInsights from '../components/AIInsights.jsx';
+import BillReminderWidget from '../components/BillReminderWidget.jsx';
+import GoalProgressWidget from '../components/GoalProgressWidget.jsx';
 
 const Dashboard = () => {
   const [analytics, setAnalytics] = useState(null);
   const [recentExpenses, setRecentExpenses] = useState([]);
+  const [incomes, setIncomes] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -16,12 +19,14 @@ const Dashboard = () => {
 
   const fetchDashboardData = async () => {
     try {
-      const [analyticsRes, expensesRes] = await Promise.all([
+      const [analyticsRes, expensesRes, incomesRes] = await Promise.all([
         expenseService.getAnalytics(),
-        expenseService.getExpenses({ limit: 5 })
+        expenseService.getExpenses({ limit: 5 }),
+        incomeService.getIncomes()
       ]);
       setAnalytics(analyticsRes.data);
       setRecentExpenses(expensesRes.data.expenses || []);
+      setIncomes(incomesRes.data || []);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
@@ -61,23 +66,35 @@ const Dashboard = () => {
   const insights = analytics?.insights || {};
   const spendingTrend = parseFloat(insights.spendingTrend) || 0;
 
+  const totalIncome = incomes.reduce((sum, item) => sum + item.amount, 0);
+  const totalExpenses = analytics?.totalExpenses?.total || 0;
+  const netBalance = totalIncome - totalExpenses;
+
   const cards = [
     {
+      title: 'Net Balance',
+      value: `₹${netBalance.toFixed(2)}`,
+      icon: Wallet,
+      color: netBalance >= 0 ? 'text-emerald-600' : 'text-red-600',
+      bgColor: netBalance >= 0 ? 'bg-emerald-100 dark:bg-emerald-900/20' : 'bg-red-100 dark:bg-red-900/20',
+      subtitle: 'Income - Expenses'
+    },
+    {
+      title: 'Total Income',
+      value: `₹${totalIncome.toFixed(2)}`,
+      icon: TrendingUp,
+      color: 'text-green-600',
+      bgColor: 'bg-green-100 dark:bg-green-900/20',
+      subtitle: `${incomes.length} sources`
+    },
+    {
       title: 'Total Expenses',
-      value: `₹${analytics?.totalExpenses?.total?.toFixed(2) || '0.00'}`,
+      value: `₹${totalExpenses.toFixed(2)}`,
       icon: DollarSign,
       color: 'text-blue-600',
       bgColor: 'bg-blue-100 dark:bg-blue-900/20',
       change: spendingTrend,
       changeType: spendingTrend > 0 ? 'increase' : 'decrease'
-    },
-    {
-      title: 'This Month',
-      value: `₹${analytics?.monthlyExpenses?.total?.toFixed(2) || '0.00'}`,
-      icon: Calendar,
-      color: 'text-green-600',
-      bgColor: 'bg-green-100 dark:bg-green-900/20',
-      subtitle: `${analytics?.monthlyExpenses?.count || 0} transactions`
     },
     {
       title: 'Top Category',
@@ -86,14 +103,6 @@ const Dashboard = () => {
       color: 'text-purple-600',
       bgColor: 'bg-purple-100 dark:bg-purple-900/20',
       subtitle: `₹${categoryData[0]?.value?.toFixed(2) || '0.00'}`
-    },
-    {
-      title: 'Avg Daily Spend',
-      value: `₹${insights.avgDailySpend?.toFixed(2) || '0.00'}`,
-      icon: TrendingUp,
-      color: 'text-orange-600',
-      bgColor: 'bg-orange-100 dark:bg-orange-900/20',
-      subtitle: 'This month'
     }
   ];
 
@@ -130,11 +139,10 @@ const Dashboard = () => {
                 <card.icon className={`w-6 h-6 ${card.color}`} />
               </div>
               {card.change && (
-                <div className={`flex items-center space-x-1 text-sm font-medium ${
-                  card.changeType === 'increase' ? 'text-red-600' : 'text-green-600'
-                }`}>
-                  {card.changeType === 'increase' ? 
-                    <ArrowUpRight className="w-4 h-4" /> : 
+                <div className={`flex items-center space-x-1 text-sm font-medium ${card.changeType === 'increase' ? 'text-red-600' : 'text-green-600'
+                  }`}>
+                  {card.changeType === 'increase' ?
+                    <ArrowUpRight className="w-4 h-4" /> :
                     <ArrowDownRight className="w-4 h-4" />
                   }
                   <span>{Math.abs(card.change)}%</span>
@@ -166,8 +174,8 @@ const Dashboard = () => {
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
               Spending by Category
             </h3>
-            <Link 
-              to="/analytics" 
+            <Link
+              to="/analytics"
               className="text-primary hover:text-primary/80 text-sm font-medium"
             >
               View Details →
@@ -196,8 +204,8 @@ const Dashboard = () => {
                 {categoryData.slice(0, 4).map((category, index) => (
                   <div key={index} className="flex items-center justify-between">
                     <div className="flex items-center space-x-2">
-                      <div 
-                        className="w-3 h-3 rounded-full" 
+                      <div
+                        className="w-3 h-3 rounded-full"
                         style={{ backgroundColor: category.color }}
                       ></div>
                       <span className="text-sm text-gray-600 dark:text-gray-400">
@@ -224,8 +232,8 @@ const Dashboard = () => {
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
               Monthly Trends
             </h3>
-            <Link 
-              to="/analytics" 
+            <Link
+              to="/analytics"
               className="text-primary hover:text-primary/80 text-sm font-medium"
             >
               View Analytics →
@@ -236,10 +244,10 @@ const Dashboard = () => {
               <LineChart data={monthlyData}>
                 <XAxis dataKey="month" axisLine={false} tickLine={false} />
                 <YAxis hide />
-                <Line 
-                  type="monotone" 
-                  dataKey="amount" 
-                  stroke="#6366F1" 
+                <Line
+                  type="monotone"
+                  dataKey="amount"
+                  stroke="#6366F1"
                   strokeWidth={3}
                   dot={{ fill: '#6366F1', strokeWidth: 2, r: 4 }}
                 />
@@ -261,8 +269,8 @@ const Dashboard = () => {
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
               Recent Expenses
             </h3>
-            <Link 
-              to="/expenses" 
+            <Link
+              to="/expenses"
               className="text-primary hover:text-primary/80 text-sm font-medium"
             >
               View All →
@@ -333,6 +341,12 @@ const Dashboard = () => {
 
           {/* Insights */}
           <AIInsights />
+
+          {/* Bill Reminders */}
+          <BillReminderWidget />
+
+          {/* Financial Goals */}
+          <GoalProgressWidget />
         </div>
       </div>
     </div>

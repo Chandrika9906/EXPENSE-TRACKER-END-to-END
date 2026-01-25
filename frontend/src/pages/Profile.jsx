@@ -2,14 +2,14 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { User, Mail, Calendar, Settings, Shield, Bell, Moon, Sun, Save, Edit3, Camera } from 'lucide-react';
 import toast from 'react-hot-toast';
-import api from '../services/authService';
+import api, { exportService } from '../services/authService';
 
 const Profile = () => {
   const { user, logout } = useAuth();
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('profile');
   const [darkMode, setDarkMode] = useState(false);
-  
+
   const [profileData, setProfileData] = useState({
     name: user?.name || '',
     email: user?.email || '',
@@ -76,6 +76,22 @@ const Profile = () => {
     }
   };
 
+  const handleExport = async () => {
+    try {
+      const response = await exportService.downloadData();
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `financial_report_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      toast.success('Data exported successfully');
+    } catch (error) {
+      toast.error('Failed to export data');
+    }
+  };
+
   const tabs = [
     { id: 'profile', label: 'Profile', icon: User },
     { id: 'security', label: 'Security', icon: Shield },
@@ -131,11 +147,10 @@ const Profile = () => {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left transition-colors ${
-                    activeTab === tab.id
-                      ? 'bg-primary text-white'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }`}
+                  className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left transition-colors ${activeTab === tab.id
+                    ? 'bg-primary text-white'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    }`}
                 >
                   <tab.icon className="w-5 h-5" />
                   <span className="font-medium">{tab.label}</span>
@@ -167,7 +182,7 @@ const Profile = () => {
                         type="text"
                         className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                         value={profileData.name}
-                        onChange={(e) => setProfileData({...profileData, name: e.target.value})}
+                        onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
                       />
                     </div>
                     <div>
@@ -178,7 +193,7 @@ const Profile = () => {
                         type="email"
                         className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                         value={profileData.email}
-                        onChange={(e) => setProfileData({...profileData, email: e.target.value})}
+                        onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
                       />
                     </div>
                   </div>
@@ -189,7 +204,7 @@ const Profile = () => {
                     <select
                       className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                       value={profileData.currency}
-                      onChange={(e) => setProfileData({...profileData, currency: e.target.value})}
+                      onChange={(e) => setProfileData({ ...profileData, currency: e.target.value })}
                     >
                       <option value="INR">Indian Rupee (₹)</option>
                       <option value="USD">US Dollar ($)</option>
@@ -229,7 +244,7 @@ const Profile = () => {
                       type="password"
                       className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                       value={passwordData.currentPassword}
-                      onChange={(e) => setPasswordData({...passwordData, currentPassword: e.target.value})}
+                      onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
                     />
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -241,7 +256,7 @@ const Profile = () => {
                         type="password"
                         className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                         value={passwordData.newPassword}
-                        onChange={(e) => setPasswordData({...passwordData, newPassword: e.target.value})}
+                        onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
                       />
                     </div>
                     <div>
@@ -252,7 +267,7 @@ const Profile = () => {
                         type="password"
                         className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                         value={passwordData.confirmPassword}
-                        onChange={(e) => setPasswordData({...passwordData, confirmPassword: e.target.value})}
+                        onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
                       />
                     </div>
                   </div>
@@ -307,14 +322,12 @@ const Profile = () => {
                     </div>
                     <button
                       onClick={toggleDarkMode}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        darkMode ? 'bg-primary' : 'bg-gray-300'
-                      }`}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${darkMode ? 'bg-primary' : 'bg-gray-300'
+                        }`}
                     >
                       <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          darkMode ? 'translate-x-6' : 'translate-x-1'
-                        }`}
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${darkMode ? 'translate-x-6' : 'translate-x-1'
+                          }`}
                       />
                     </button>
                   </div>
@@ -347,7 +360,10 @@ const Profile = () => {
                     <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
                       Download your expense data in CSV format
                     </p>
-                    <button className="bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium">
+                    <button
+                      onClick={handleExport}
+                      className="bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium"
+                    >
                       Export Data
                     </button>
                   </div>

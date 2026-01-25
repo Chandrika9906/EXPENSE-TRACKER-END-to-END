@@ -19,9 +19,11 @@ const expenseValidation = [
   body('date').isISO8601().withMessage('Invalid date format')
 ];
 
+const upload = require('../middleware/upload');
+
 router.use(auth);
 
-router.post('/', expenseValidation, createExpense);
+router.post('/', [upload.single('receipt'), expenseValidation], createExpense);
 router.get('/', getExpenses);
 router.get('/analytics', getAnalytics);
 router.put('/:id', expenseValidation, updateExpense);

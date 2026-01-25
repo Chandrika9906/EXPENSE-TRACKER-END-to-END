@@ -28,7 +28,10 @@ const Expenses = () => {
     amount: '',
     category: 'Food',
     date: new Date().toISOString().split('T')[0],
-    notes: ''
+    notes: '',
+    isRecurring: false,
+    recurringInterval: 'monthly',
+    receipt: null
   });
   const [generatingNote, setGeneratingNote] = useState(false);
 
@@ -67,11 +70,11 @@ const Expenses = () => {
       toast.error('Please fill title, amount, and category first');
       return;
     }
-    
+
     setGeneratingNote(true);
     try {
       const response = await aiService.generateNote(formData.title, formData.amount, formData.category);
-      setFormData({...formData, notes: response.data.note});
+      setFormData({ ...formData, notes: response.data.note });
       toast.success('AI note generated!');
     } catch (error) {
       toast.error('Failed to generate note');
@@ -84,10 +87,18 @@ const Expenses = () => {
     e.preventDefault();
     try {
       if (editingExpense) {
+        // Update logic might need FormData too if we support updating receipts, but for now let's focus on create
         await expenseService.updateExpense(editingExpense._id, formData);
         toast.success('Expense updated successfully');
       } else {
-        await expenseService.createExpense(formData);
+        const data = new FormData();
+        Object.keys(formData).forEach(key => {
+          if (formData[key] !== null) {
+            data.append(key, formData[key]);
+          }
+        });
+
+        await expenseService.createExpense(data);
         toast.success('Expense created successfully');
       }
       setShowModal(false);
@@ -129,7 +140,9 @@ const Expenses = () => {
       amount: '',
       category: 'Food',
       date: new Date().toISOString().split('T')[0],
-      notes: ''
+      notes: '',
+      isRecurring: false,
+      recurringInterval: 'monthly'
     });
   };
 
@@ -180,8 +193,8 @@ const Expenses = () => {
 
   const totalAmount = expenses.reduce((sum, expense) => sum + expense.amount, 0);
   const filteredTotal = expenses.length > 0 ? totalAmount : 0;
-  const categoryTotal = filters.category ? 
-    `${filters.category} Total: ₹${totalAmount.toFixed(2)}` : 
+  const categoryTotal = filters.category ?
+    `${filters.category} Total: ₹${totalAmount.toFixed(2)}` :
     `Total Amount: ₹${totalAmount.toFixed(2)}`;
 
   return (
@@ -199,11 +212,10 @@ const Expenses = () => {
         <div className="flex items-center space-x-2">
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className={`px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
-              showFilters 
-                ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800' 
-                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700'
-            }`}
+            className={`px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${showFilters
+              ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800'
+              : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700'
+              }`}
           >
             <Filter className="w-4 h-4 mr-1 inline" />
             Filters
@@ -409,6 +421,18 @@ const Expenses = () => {
                               <span className="truncate max-w-xs">{expense.notes}</span>
                             </div>
                           )}
+                          {expense.receiptImage && (
+                            <a
+                              href={`http://localhost:5001/${expense.receiptImage.replace(/\\/g, '/')}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center space-x-1 text-sm text-blue-500 hover:text-blue-600"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <FileText className="w-4 h-4" />
+                              <span>Receipt</span>
+                            </a>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -464,7 +488,7 @@ const Expenses = () => {
                     placeholder="Enter expense title"
                     className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                     value={formData.title}
-                    onChange={(e) => setFormData({...formData, title: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                     required
                   />
                 </div>
@@ -478,7 +502,7 @@ const Expenses = () => {
                     placeholder="Enter amount"
                     className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                     value={formData.amount}
-                    onChange={(e) => setFormData({...formData, amount: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
                     required
                   />
                 </div>
@@ -489,7 +513,7 @@ const Expenses = () => {
                   <select
                     className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                     value={formData.category}
-                    onChange={(e) => setFormData({...formData, category: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                   >
                     {categories.map(cat => (
                       <option key={cat.name} value={cat.name}>{cat.icon} {cat.name}</option>
@@ -504,10 +528,69 @@ const Expenses = () => {
                     type="date"
                     className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                     value={formData.date}
-                    onChange={(e) => setFormData({...formData, date: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
                     required
                   />
                 </div>
+
+                <div className="flex items-center space-x-4 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-xl border border-gray-200 dark:border-gray-600">
+                  <div className="flex items-center h-5">
+                    <input
+                      id="isRecurring"
+                      type="checkbox"
+                      className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
+                      checked={formData.isRecurring}
+                      onChange={(e) => setFormData({ ...formData, isRecurring: e.target.checked })}
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label htmlFor="isRecurring" className="block text-sm font-medium text-gray-900 dark:text-white">
+                      Recurring Expense
+                    </label>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Automatically add this expense periodically
+                    </p>
+                  </div>
+                  {formData.isRecurring && (
+                    <select
+                      className="px-3 py-1.5 bg-white dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      value={formData.recurringInterval}
+                      onChange={(e) => setFormData({ ...formData, recurringInterval: e.target.value })}
+                    >
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="monthly">Monthly</option>
+                      <option value="yearly">Yearly</option>
+                    </select>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                    Receipt Image (Optional)
+                  </label>
+                  <div className="flex items-center justify-center w-full">
+                    <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-xl cursor-pointer bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-700/50 hover:bg-gray-100 dark:border-gray-600 dark:hover:border-gray-500">
+                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                        <svg className="w-8 h-8 mb-4 text-gray-500 dark:text-gray-400" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
+                          <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2" />
+                        </svg>
+                        <p className="mb-2 text-sm text-gray-500 dark:text-gray-400"><span className="font-semibold">Click to upload</span> or drag and drop</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">SVG, PNG, JPG (MAX. 5MB)</p>
+                      </div>
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept="image/*"
+                        onChange={(e) => setFormData({ ...formData, receipt: e.target.files[0] })}
+                      />
+                    </label>
+                  </div>
+                  {formData.receipt && (
+                    <p className="mt-2 text-xs text-green-600 font-medium">Selected: {formData.receipt.name}</p>
+                  )}
+                </div>
+
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">
@@ -528,7 +611,7 @@ const Expenses = () => {
                     className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
                     rows="3"
                     value={formData.notes}
-                    onChange={(e) => setFormData({...formData, notes: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                   />
                 </div>
               </div>
@@ -562,7 +645,7 @@ const Expenses = () => {
           onClose={() => setShowOCRModal(false)}
         />
       )}
-      
+
       {/* Voice Input Modal */}
       {showVoiceModal && (
         <VoiceInput
@@ -570,12 +653,12 @@ const Expenses = () => {
           onClose={() => setShowVoiceModal(false)}
         />
       )}
-      
+
       {/* Smart Search Modal */}
       {showSmartSearch && (
         <SmartSearch
           onFiltersApplied={(filters) => {
-            setFilters({...filters, ...filters});
+            setFilters({ ...filters, ...filters });
             setShowSmartSearch(false);
           }}
           onClose={() => setShowSmartSearch(false)}

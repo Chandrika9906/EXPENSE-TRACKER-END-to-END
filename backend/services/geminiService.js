@@ -7,11 +7,11 @@ class GeminiService {
       return;
     }
     this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    this.model = this.genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    this.model = this.genAI.getGenerativeModel({ model: "gemini-flash-latest" });
   }
 
   async extractExpenseFromImage(imageBuffer) {
-    try {
+    return this.retryWithBackoff(async () => {
       if (!this.model) {
         throw new Error('Gemini model not initialized');
       }
@@ -64,7 +64,7 @@ class GeminiService {
       }
 
       const expenseData = JSON.parse(jsonMatch[0]);
-      
+
       // Validate and set defaults
       return {
         title: expenseData.title || 'Payment',
@@ -74,8 +74,8 @@ class GeminiService {
         merchant: expenseData.merchant || 'Unknown',
         confidence: Number(expenseData.confidence) || 0.5
       };
-    } catch (error) {
-      console.error('Gemini AI Error:', error);
+    }).catch(error => {
+      console.error('Gemini AI Error after retries:', error);
       // Return fallback data instead of throwing
       return {
         title: 'Payment from Image',
@@ -85,7 +85,7 @@ class GeminiService {
         merchant: 'Unknown',
         confidence: 0.2
       };
-    }
+    });
   }
 
   async categorizeExpense(title, merchant) {
@@ -93,10 +93,10 @@ class GeminiService {
       if (!this.model) return 'Other';
 
       const prompt = `Categorize this expense: "${title}" from "${merchant}". Return only one word from: Food, Travel, Rent, Entertainment, Healthcare, Shopping, Utilities, Other`;
-      
+
       const result = await this.model.generateContent(prompt);
       const category = (await result.response.text()).trim();
-      
+
       const validCategories = ['Food', 'Travel', 'Rent', 'Entertainment', 'Healthcare', 'Shopping', 'Utilities', 'Other'];
       return validCategories.includes(category) ? category : 'Other';
     } catch (error) {
@@ -109,11 +109,11 @@ class GeminiService {
       if (!this.model) return 'Unable to generate advice';
 
       const prompt = `Based on expenses: ${JSON.stringify(expenses.slice(0, 10))} and budgets: ${JSON.stringify(budgets)}, give 3 short financial tips in JSON format: {"tips": ["tip1", "tip2", "tip3"]}`;
-      
+
       const result = await this.model.generateContent(prompt);
       const text = await result.response.text();
       const jsonMatch = text.match(/\{[\s\S]*\}/);
-      
+
       if (jsonMatch) {
         const advice = JSON.parse(jsonMatch[0]);
         return advice.tips || ['Track your spending regularly', 'Set realistic budgets', 'Review expenses monthly'];
@@ -129,11 +129,11 @@ class GeminiService {
       if (!this.model) return { prediction: 0, confidence: 0 };
 
       const prompt = `Based on these expenses: ${JSON.stringify(expenses.slice(0, 20))}, predict next month's total spending. Return JSON: {"prediction": number, "confidence": 0.1-1.0}`;
-      
+
       const result = await this.model.generateContent(prompt);
       const text = await result.response.text();
       const jsonMatch = text.match(/\{[\s\S]*\}/);
-      
+
       if (jsonMatch) {
         const data = JSON.parse(jsonMatch[0]);
         return {
@@ -152,10 +152,10 @@ class GeminiService {
       if (!this.model) return '';
 
       const prompt = `Generate a brief, helpful note for this expense: "${title}" - ₹${amount} in ${category} category. Return only the note text, max 50 words.`;
-      
+
       const result = await this.model.generateContent(prompt);
       const note = (await result.response.text()).trim();
-      
+
       return note || `${category} expense of ₹${amount}`;
     } catch (error) {
       return `${category} expense of ₹${amount}`;
@@ -181,11 +181,11 @@ Rules:
 - Category: Food, Travel, Rent, Entertainment, Healthcare, Shopping, Utilities, Other
 - Use today's date if not specified
 - confidence 0.1-1.0 based on clarity`;
-      
+
       const result = await this.model.generateContent(prompt);
       const text = await result.response.text();
       const jsonMatch = text.match(/\{[\s\S]*\}/);
-      
+
       if (jsonMatch) {
         const data = JSON.parse(jsonMatch[0]);
         return {
@@ -228,11 +228,11 @@ Rules:
 - sortBy: date, amount, category (default: date)
 - sortOrder: asc, desc (default: desc)
 - Only include fields that are mentioned in the query`;
-      
+
       const result = await this.model.generateContent(prompt);
       const text = await result.response.text();
       const jsonMatch = text.match(/\{[\s\S]*\}/);
-      
+
       if (jsonMatch) {
         const filters = JSON.parse(jsonMatch[0]);
         // Clean up null values
@@ -247,6 +247,61 @@ Rules:
     } catch (error) {
       console.error('Natural language parsing error:', error);
       return {};
+    }
+  }
+  async chatWithFinancialAdvisor(message, context = {}) {
+    try {
+      if (!this.model) return { text: "I'm currently offline. Please check your API key.", action: null };
+
+      const { recentExpenses = [], totalIncome = 0, netBalance = 0, budgets = [] } = context;
+
+      const prompt = `
+        You are a smart and helpful financial advisor for a personal expense tracker app.
+
+        User Context:
+        - Total Income: ₹${totalIncome}
+        - Net Balance: ₹${netBalance}
+        - Recent Expenses: ${JSON.stringify(recentExpenses.slice(0, 5))}
+        - Budgets: ${JSON.stringify(budgets)}
+
+        User Message: "${message}"
+
+        Goal: Answer the user's question or assist with financial tasks. Be concise, friendly, and encouraging.
+
+        Capabilities:
+        1. Answer questions about their spending (using provided context).
+        2. Detect if the user wants to ADD an expense (e.g., "I spent A on B").
+
+        Output Format:
+        Return ONLY valid JSON:
+        {
+          "text": "Your helpful response to the user here.",
+          "action": null | "ADD_EXPENSE",
+          "data": null | { "title": "Coffee", "amount": 50, "category": "Food" }
+        }
+
+        Rules:
+        - If the user says "add expense" or similar, set action to "ADD_EXPENSE" and extract data.
+        - If data is missing for adding expense (like amount), ask for it in "text" and set action to null.
+        - Currency is INR (₹).
+      `;
+
+      const result = await this.model.generateContent(prompt);
+      const text = await result.response.text();
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+      return { text: text || "I didn't understand that.", action: null };
+
+    } catch (error) {
+      console.error('Chat error:', error);
+      // Handle quota exceeded or other API errors gracefully
+      if (error.status === 429) {
+        return { text: "I've reached my daily limit for AI responses. Please try again tomorrow or contact support for premium access.", action: null };
+      }
+      return { text: "Sorry, I'm having trouble processing that right now.", action: null };
     }
   }
 }

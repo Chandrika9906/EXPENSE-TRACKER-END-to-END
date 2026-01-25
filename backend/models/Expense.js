@@ -29,6 +29,21 @@ const expenseSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
+  },
+  isRecurring: {
+    type: Boolean,
+    default: false
+  },
+  recurringInterval: {
+    type: String,
+    enum: ['daily', 'weekly', 'monthly', 'yearly'],
+    default: 'monthly'
+  },
+  nextRecurringDate: {
+    type: Date
+  },
+  receiptImage: {
+    type: String
   }
 }, {
   timestamps: true

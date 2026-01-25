@@ -16,7 +16,7 @@ const createBudget = async (req, res) => {
 const getBudgets = async (req, res) => {
   try {
     const budgets = await Budget.find({ userId: req.user._id }).sort({ createdAt: -1 });
-    
+
     // Calculate spending for each budget
     const budgetsWithSpending = await Promise.all(
       budgets.map(async (budget) => {
@@ -33,15 +33,15 @@ const getBudgets = async (req, res) => {
 
         const totalSpent = spent[0]?.total || 0;
         const percentage = (totalSpent / budget.amount) * 100;
-        
+
         return {
           ...budget.toObject(),
           spent: totalSpent,
           remaining: budget.amount - totalSpent,
           percentage: Math.round(percentage),
-          status: percentage >= 100 ? 'exceeded' : 
-                  percentage >= budget.alertThresholds.critical ? 'critical' :
-                  percentage >= budget.alertThresholds.warning ? 'warning' : 'safe'
+          status: percentage >= 100 ? 'exceeded' :
+            percentage >= (budget.alertThresholds?.critical || 90) ? 'critical' :
+              percentage >= (budget.alertThresholds?.warning || 80) ? 'warning' : 'safe'
         };
       })
     );

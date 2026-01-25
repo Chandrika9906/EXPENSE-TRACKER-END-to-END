@@ -8,6 +8,7 @@ const router = express.Router();
 router.get('/advice', auth, getFinancialAdvice);
 router.get('/prediction', auth, getSpendingPrediction);
 router.post('/categorize', auth, categorizeExpense);
+router.post('/chat', auth, require('../controllers/aiController').handleChat);
 router.post('/generate-note', auth, async (req, res) => {
   try {
     const { title, amount, category } = req.body;
