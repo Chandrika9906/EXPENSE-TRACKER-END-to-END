@@ -1,5 +1,14 @@
 const express = require('express');
-const { getFinancialAdvice, getSpendingPrediction, categorizeExpense } = require('../controllers/aiController');
+const {
+  getFinancialAdvice,
+  getSpendingPrediction,
+  categorizeExpense,
+  handleChat,
+  getSmartSuggestions,
+  getSmartBudgets,
+  predictBill,
+  parseVoice
+} = require('../controllers/aiController');
 const auth = require('../middleware/auth');
 const geminiService = require('../services/geminiService');
 
@@ -8,7 +17,12 @@ const router = express.Router();
 router.get('/advice', auth, getFinancialAdvice);
 router.get('/prediction', auth, getSpendingPrediction);
 router.post('/categorize', auth, categorizeExpense);
-router.post('/chat', auth, require('../controllers/aiController').handleChat);
+router.post('/chat', auth, handleChat);
+router.post('/smart-suggestions', auth, getSmartSuggestions);
+router.post('/smart-budgets', auth, getSmartBudgets);
+router.post('/predict-bill', auth, predictBill);
+router.post('/parse-voice', auth, parseVoice);
+
 router.post('/generate-note', auth, async (req, res) => {
   try {
     const { title, amount, category } = req.body;
@@ -16,16 +30,6 @@ router.post('/generate-note', auth, async (req, res) => {
     res.json({ note });
   } catch (error) {
     res.status(500).json({ message: 'Error generating note' });
-  }
-});
-
-router.post('/parse-voice', auth, async (req, res) => {
-  try {
-    const { voiceText } = req.body;
-    const expenseData = await geminiService.parseVoiceExpense(voiceText);
-    res.json({ expenseData });
-  } catch (error) {
-    res.status(500).json({ message: 'Error parsing voice input' });
   }
 });
 

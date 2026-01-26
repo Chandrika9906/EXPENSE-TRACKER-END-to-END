@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
-import { expenseService } from '../services/authService';
-import { aiService } from '../services/aiService';
+import { expenseService, aiService } from '../services/authService';
 import { Plus, Edit, Trash2, Search, Filter, Calendar, Tag, DollarSign, FileText, MoreVertical, Eye, Camera, Sparkles, Mic } from 'lucide-react';
 import toast from 'react-hot-toast';
 import OCRUpload from '../components/OCRUpload';
-import VoiceInput from '../components/VoiceInput';
+import VoiceInputButton from '../components/VoiceInputButton';
 import SmartSearch from '../components/SmartSearch';
 
 const Expenses = () => {
@@ -12,10 +11,13 @@ const Expenses = () => {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [showOCRModal, setShowOCRModal] = useState(false);
-  const [showVoiceModal, setShowVoiceModal] = useState(false);
   const [showSmartSearch, setShowSmartSearch] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [suggestions, setSuggestions] = useState([]);
+  const [isSuggesting, setIsSuggesting] = useState(false);
+  const [selectedReceipt, setSelectedReceipt] = useState(null);
+  const [debounceTimer, setDebounceTimer] = useState(null);
   const [filters, setFilters] = useState({
     search: '',
     category: '',
@@ -73,7 +75,11 @@ const Expenses = () => {
 
     setGeneratingNote(true);
     try {
-      const response = await aiService.generateNote(formData.title, formData.amount, formData.category);
+      const response = await aiService.generateNote({
+        title: formData.title,
+        amount: formData.amount,
+        category: formData.category
+      });
       setFormData({ ...formData, notes: response.data.note });
       toast.success('AI note generated!');
     } catch (error) {
@@ -85,18 +91,50 @@ const Expenses = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Validation
+    if (!formData.title.trim()) {
+      toast.error('Please enter a title');
+      return;
+    }
+    
+    if (!formData.amount || parseFloat(formData.amount) <= 0) {
+      toast.error('Please enter a valid amount');
+      return;
+    }
+    
+    if (!formData.date) {
+      toast.error('Please select a date');
+      return;
+    }
+    
     try {
       if (editingExpense) {
-        // Update logic might need FormData too if we support updating receipts, but for now let's focus on create
-        await expenseService.updateExpense(editingExpense._id, formData);
+        // For updates, we might not need FormData if no file is involved
+        const updateData = {
+          title: formData.title.trim(),
+          amount: parseFloat(formData.amount),
+          category: formData.category,
+          date: formData.date,
+          notes: formData.notes.trim(),
+          isRecurring: formData.isRecurring,
+          recurringInterval: formData.recurringInterval
+        };
+        await expenseService.updateExpense(editingExpense._id, updateData);
         toast.success('Expense updated successfully');
       } else {
         const data = new FormData();
-        Object.keys(formData).forEach(key => {
-          if (formData[key] !== null) {
-            data.append(key, formData[key]);
-          }
-        });
+        data.append('title', formData.title.trim());
+        data.append('amount', parseFloat(formData.amount));
+        data.append('category', formData.category);
+        data.append('date', formData.date);
+        data.append('notes', formData.notes.trim());
+        data.append('isRecurring', formData.isRecurring);
+        data.append('recurringInterval', formData.recurringInterval);
+        
+        if (formData.receipt) {
+          data.append('receipt', formData.receipt);
+        }
 
         await expenseService.createExpense(data);
         toast.success('Expense created successfully');
@@ -166,13 +204,62 @@ const Expenses = () => {
 
   const handleVoiceExpense = (voiceData) => {
     setFormData({
-      title: voiceData.title,
-      amount: voiceData.amount.toString(),
-      category: voiceData.category,
-      date: voiceData.date,
+      title: voiceData.title || '',
+      amount: voiceData.amount ? voiceData.amount.toString() : '',
+      category: voiceData.category || 'Other',
+      date: voiceData.date || new Date().toISOString().split('T')[0],
       notes: `Voice entry (${Math.round(voiceData.confidence * 100)}% confidence)`
     });
     setShowModal(true);
+    toast.success('AI filled the form for you!', { icon: '✨' });
+  };
+
+  const handleSmartSuggest = async (title) => {
+    if (title.length < 3) {
+      setSuggestions([]);
+      return;
+    }
+
+    if (debounceTimer) clearTimeout(debounceTimer);
+
+    const timer = setTimeout(async () => {
+      try {
+        setIsSuggesting(true);
+        const response = await aiService.getSmartSuggestions(title);
+        setSuggestions(response.data || []);
+      } catch (error) {
+        console.error('Error fetching suggestions:', error);
+      } finally {
+        setIsSuggesting(false);
+      }
+    }, 500);
+
+    setDebounceTimer(timer);
+  };
+
+  const applySuggestion = (suggestion) => {
+    setFormData({
+      ...formData,
+      title: suggestion.title,
+      amount: suggestion.amount.toString(),
+      category: suggestion.category
+    });
+    setSuggestions([]);
+  };
+
+  const handleCopyExpense = (expense) => {
+    setEditingExpense(null);
+    setFormData({
+      title: expense.title,
+      amount: expense.amount.toString(),
+      category: expense.category,
+      date: new Date().toISOString().split('T')[0],
+      notes: expense.notes || '',
+      isRecurring: false,
+      recurringInterval: 'monthly'
+    });
+    setShowModal(true);
+    toast.success('Expense details copied!', { icon: '📋' });
   };
 
   const handleSmartSearch = (parsedFilters) => {
@@ -194,8 +281,8 @@ const Expenses = () => {
   const totalAmount = expenses.reduce((sum, expense) => sum + expense.amount, 0);
   const filteredTotal = expenses.length > 0 ? totalAmount : 0;
   const categoryTotal = filters.category ?
-    `${filters.category} Total: ₹${totalAmount.toFixed(2)}` :
-    `Total Amount: ₹${totalAmount.toFixed(2)}`;
+    `${filters.category} Total: ₹${(totalAmount || 0).toFixed(2)}` :
+    `Total Amount: ₹${(totalAmount || 0).toFixed(2)}`;
 
   return (
     <div className="space-y-6">
@@ -227,13 +314,10 @@ const Expenses = () => {
             <Sparkles className="w-4 h-4 mr-1 inline" />
             Smart Search
           </button>
-          <button
-            onClick={() => setShowVoiceModal(true)}
-            className="px-3 py-2 rounded-lg text-sm font-medium bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700 transition-colors"
-          >
-            <Mic className="w-4 h-4 mr-1 inline" />
-            Voice
-          </button>
+          <VoiceInputButton
+            onParsedData={handleVoiceExpense}
+            pageContext="expenses"
+          />
           <button
             onClick={() => setShowOCRModal(true)}
             className="px-3 py-2 rounded-lg text-sm font-medium bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700 transition-colors"
@@ -422,16 +506,16 @@ const Expenses = () => {
                             </div>
                           )}
                           {expense.receiptImage && (
-                            <a
-                              href={`http://localhost:5001/${expense.receiptImage.replace(/\\/g, '/')}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedReceipt(`http://localhost:5001/${expense.receiptImage.replace(/\\/g, '/')}`);
+                              }}
                               className="flex items-center space-x-1 text-sm text-blue-500 hover:text-blue-600"
-                              onClick={(e) => e.stopPropagation()}
                             >
-                              <FileText className="w-4 h-4" />
-                              <span>Receipt</span>
-                            </a>
+                              <Eye className="w-4 h-4" />
+                              <span>View Receipt</span>
+                            </button>
                           )}
                         </div>
                       </div>
@@ -439,10 +523,17 @@ const Expenses = () => {
                     <div className="flex items-center space-x-4">
                       <div className="text-right">
                         <p className="text-xl font-bold text-gray-900 dark:text-white">
-                          ₹{expense.amount.toFixed(2)}
+                          ₹{(expense.amount || 0).toFixed(2)}
                         </p>
                       </div>
                       <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => handleCopyExpense(expense)}
+                          className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors"
+                          title="Copy/Duplicate"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
                         <button
                           onClick={() => handleEdit(expense)}
                           className="p-2 text-gray-400 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
@@ -468,7 +559,7 @@ const Expenses = () => {
       {/* Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-700">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-lg max-h-[90vh] shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden">
             <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-700">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
                 {editingExpense ? 'Edit Expense' : 'Add New Expense'}
@@ -477,164 +568,186 @@ const Expenses = () => {
                 {editingExpense ? 'Update your expense details' : 'Enter the details of your new expense'}
               </p>
             </div>
-            <form onSubmit={handleSubmit} className="p-6">
-              <div className="space-y-5">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                    Title
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Enter expense title"
-                    className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                    value={formData.title}
-                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                    Amount (₹)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="Enter amount"
-                    className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                    value={formData.amount}
-                    onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                    Category
-                  </label>
-                  <select
-                    className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                    value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  >
-                    {categories.map(cat => (
-                      <option key={cat.name} value={cat.name}>{cat.icon} {cat.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                    Date
-                  </label>
-                  <input
-                    type="date"
-                    className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                    value={formData.date}
-                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                    required
-                  />
-                </div>
-
-                <div className="flex items-center space-x-4 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-xl border border-gray-200 dark:border-gray-600">
-                  <div className="flex items-center h-5">
+            <div className="overflow-y-auto custom-scrollbar">
+              <form onSubmit={handleSubmit} className="p-6">
+                <div className="space-y-5">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                      Title
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Enter expense title"
+                        className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                        value={formData.title}
+                        onChange={(e) => {
+                          setFormData({ ...formData, title: e.target.value });
+                          handleSmartSuggest(e.target.value);
+                        }}
+                        required
+                      />
+                      {suggestions.length > 0 && (
+                        <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg">
+                          {suggestions.map((s, i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => applySuggestion(s)}
+                              className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-700 text-left text-sm"
+                            >
+                              <span>{s.title}</span>
+                              <span className="text-gray-500">₹{s.amount} • {s.category}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                      Amount (₹)
+                    </label>
                     <input
-                      id="isRecurring"
-                      type="checkbox"
-                      className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
-                      checked={formData.isRecurring}
-                      onChange={(e) => setFormData({ ...formData, isRecurring: e.target.checked })}
+                      type="number"
+                      step="0.01"
+                      placeholder="Enter amount"
+                      className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                      value={formData.amount}
+                      onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                      required
                     />
                   </div>
-                  <div className="flex-1">
-                    <label htmlFor="isRecurring" className="block text-sm font-medium text-gray-900 dark:text-white">
-                      Recurring Expense
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                      Category
                     </label>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      Automatically add this expense periodically
-                    </p>
-                  </div>
-                  {formData.isRecurring && (
                     <select
-                      className="px-3 py-1.5 bg-white dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                      value={formData.recurringInterval}
-                      onChange={(e) => setFormData({ ...formData, recurringInterval: e.target.value })}
+                      className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                      value={formData.category}
+                      onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                     >
-                      <option value="daily">Daily</option>
-                      <option value="weekly">Weekly</option>
-                      <option value="monthly">Monthly</option>
-                      <option value="yearly">Yearly</option>
+                      {categories.map(cat => (
+                        <option key={cat.name} value={cat.name}>{cat.icon} {cat.name}</option>
+                      ))}
                     </select>
-                  )}
-                </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                      Date
+                    </label>
+                    <input
+                      type="date"
+                      className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                      value={formData.date}
+                      onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                      required
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                    Receipt Image (Optional)
-                  </label>
-                  <div className="flex items-center justify-center w-full">
-                    <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-xl cursor-pointer bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-700/50 hover:bg-gray-100 dark:border-gray-600 dark:hover:border-gray-500">
-                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                        <svg className="w-8 h-8 mb-4 text-gray-500 dark:text-gray-400" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
-                          <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2" />
-                        </svg>
-                        <p className="mb-2 text-sm text-gray-500 dark:text-gray-400"><span className="font-semibold">Click to upload</span> or drag and drop</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">SVG, PNG, JPG (MAX. 5MB)</p>
-                      </div>
+                  <div className="flex items-center space-x-4 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-xl border border-gray-200 dark:border-gray-600">
+                    <div className="flex items-center h-5">
                       <input
-                        type="file"
-                        className="hidden"
-                        accept="image/*"
-                        onChange={(e) => setFormData({ ...formData, receipt: e.target.files[0] })}
+                        id="isRecurring"
+                        type="checkbox"
+                        className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
+                        checked={formData.isRecurring}
+                        onChange={(e) => setFormData({ ...formData, isRecurring: e.target.checked })}
                       />
-                    </label>
+                    </div>
+                    <div className="flex-1">
+                      <label htmlFor="isRecurring" className="block text-sm font-medium text-gray-900 dark:text-white">
+                        Recurring Expense
+                      </label>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Automatically add this expense periodically
+                      </p>
+                    </div>
+                    {formData.isRecurring && (
+                      <select
+                        className="px-3 py-1.5 bg-white dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        value={formData.recurringInterval}
+                        onChange={(e) => setFormData({ ...formData, recurringInterval: e.target.value })}
+                      >
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                        <option value="yearly">Yearly</option>
+                      </select>
+                    )}
                   </div>
-                  {formData.receipt && (
-                    <p className="mt-2 text-xs text-green-600 font-medium">Selected: {formData.receipt.name}</p>
-                  )}
-                </div>
 
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">
-                      Notes (Optional)
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                      Receipt Image (Optional)
                     </label>
-                    <button
-                      type="button"
-                      onClick={generateAINote}
-                      disabled={generatingNote || !formData.title || !formData.amount}
-                      className="flex items-center space-x-1 text-xs text-primary hover:text-primary/80 disabled:text-gray-400 disabled:cursor-not-allowed"
-                    >
-                      <Sparkles className="w-3 h-3" />
-                      <span>{generatingNote ? 'Generating...' : 'AI Generate'}</span>
-                    </button>
+                    <div className="flex items-center justify-center w-full">
+                      <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-xl cursor-pointer bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-700/50 hover:bg-gray-100 dark:border-gray-600 dark:hover:border-gray-500">
+                        <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                          <svg className="w-8 h-8 mb-4 text-gray-500 dark:text-gray-400" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
+                            <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2" />
+                          </svg>
+                          <p className="mb-2 text-sm text-gray-500 dark:text-gray-400"><span className="font-semibold">Click to upload</span> or drag and drop</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">SVG, PNG, JPG (MAX. 5MB)</p>
+                        </div>
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept="image/*"
+                          onChange={(e) => setFormData({ ...formData, receipt: e.target.files[0] })}
+                        />
+                      </label>
+                    </div>
+                    {formData.receipt && (
+                      <p className="mt-2 text-xs text-green-600 font-medium">Selected: {formData.receipt.name}</p>
+                    )}
                   </div>
-                  <textarea
-                    placeholder="Add any notes about this expense"
-                    className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
-                    rows="3"
-                    value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  />
+
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">
+                        Notes (Optional)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={generateAINote}
+                        disabled={generatingNote || !formData.title || !formData.amount}
+                        className="flex items-center space-x-1 text-xs text-primary hover:text-primary/80 disabled:text-gray-400 disabled:cursor-not-allowed"
+                      >
+                        <Sparkles className="w-3 h-3" />
+                        <span>{generatingNote ? 'Generating...' : 'AI Generate'}</span>
+                      </button>
+                    </div>
+                    <textarea
+                      placeholder="Add any notes about this expense"
+                      className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
+                      rows="3"
+                      value={formData.notes}
+                      onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    />
+                  </div>
                 </div>
-              </div>
-              <div className="flex justify-end space-x-3 mt-8">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowModal(false);
-                    setEditingExpense(null);
-                    resetForm();
-                  }}
-                  className="px-6 py-3 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-3 bg-primary text-white rounded-xl hover:bg-primary/90 transition-colors font-medium shadow-sm"
-                >
-                  {editingExpense ? 'Update Expense' : 'Add Expense'}
-                </button>
-              </div>
-            </form>
+                <div className="flex justify-end space-x-3 mt-8">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowModal(false);
+                      setEditingExpense(null);
+                      resetForm();
+                    }}
+                    className="px-6 py-3 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-3 bg-primary text-white rounded-xl hover:bg-primary/90 transition-colors font-medium shadow-sm"
+                  >
+                    {editingExpense ? 'Update Expense' : 'Add Expense'}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}
@@ -643,14 +756,6 @@ const Expenses = () => {
         <OCRUpload
           onExpenseExtracted={handleOCRExpense}
           onClose={() => setShowOCRModal(false)}
-        />
-      )}
-
-      {/* Voice Input Modal */}
-      {showVoiceModal && (
-        <VoiceInput
-          onExpenseParsed={handleVoiceExpense}
-          onClose={() => setShowVoiceModal(false)}
         />
       )}
 
@@ -663,6 +768,33 @@ const Expenses = () => {
           }}
           onClose={() => setShowSmartSearch(false)}
         />
+      )}
+
+      {/* Receipt Preview Modal */}
+      {selectedReceipt && (
+        <div
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60] p-4"
+          onClick={() => setSelectedReceipt(null)}
+        >
+          <div
+            className="relative max-w-4xl w-full max-h-[90vh] bg-white dark:bg-gray-800 rounded-2xl overflow-hidden shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setSelectedReceipt(null)}
+              className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/70 text-white rounded-full transition-colors z-10"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            <div className="w-full h-full p-2 flex items-center justify-center">
+              <img
+                src={selectedReceipt}
+                alt="Receipt"
+                className="max-w-full max-h-[85vh] object-contain rounded-lg"
+              />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

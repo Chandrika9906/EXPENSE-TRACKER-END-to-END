@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { aiService } from '../services/aiService';
+import { aiService } from '../services/authService';
 import { Brain, TrendingUp, Lightbulb } from 'lucide-react';
 
 const AIInsights = () => {
@@ -14,8 +14,8 @@ const AIInsights = () => {
   const fetchAIInsights = async () => {
     try {
       const [adviceRes, predictionRes] = await Promise.all([
-        aiService.getFinancialAdvice(),
-        aiService.getSpendingPrediction()
+        aiService.getAdvice(),
+        aiService.getPrediction()
       ]);
       setAdvice(adviceRes.data.advice);
       setPrediction(predictionRes.data);

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { incomeService } from '../services/authService';
-import { Plus, Trash2, Search, Filter, Calendar, DollarSign, FileText, TrendingUp } from 'lucide-react';
+import { Plus, Trash2, Search, Filter, Calendar, DollarSign, FileText, TrendingUp, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
+import VoiceInputButton from '../components/VoiceInputButton';
 
 const Income = () => {
     const [incomes, setIncomes] = useState([]);
@@ -13,6 +14,17 @@ const Income = () => {
         date: new Date().toISOString().split('T')[0],
         notes: ''
     });
+
+    const handleVoiceIncome = (voiceData) => {
+        setFormData({
+            source: voiceData.title || '',
+            amount: voiceData.amount ? voiceData.amount.toString() : '',
+            date: voiceData.date || new Date().toISOString().split('T')[0],
+            notes: `Voice entry (${Math.round(voiceData.confidence * 100)}% confidence)`
+        });
+        setShowModal(true);
+        toast.success('AI filled the income details!', { icon: '✨' });
+    };
 
     useEffect(() => {
         fetchIncomes();
@@ -31,8 +43,32 @@ const Income = () => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        
+        // Validation
+        if (!formData.source.trim()) {
+            toast.error('Please enter an income source');
+            return;
+        }
+        
+        if (!formData.amount || parseFloat(formData.amount) <= 0) {
+            toast.error('Please enter a valid amount');
+            return;
+        }
+        
+        if (!formData.date) {
+            toast.error('Please select a date');
+            return;
+        }
+        
         try {
-            await incomeService.createIncome(formData);
+            const incomeData = {
+                source: formData.source.trim(),
+                amount: parseFloat(formData.amount),
+                date: formData.date,
+                notes: formData.notes.trim()
+            };
+            
+            await incomeService.createIncome(incomeData);
             toast.success('Income added successfully');
             setShowModal(false);
             setFormData({
@@ -73,13 +109,19 @@ const Income = () => {
                         Track your earnings and revenue sources
                     </p>
                 </div>
-                <button
-                    onClick={() => setShowModal(true)}
-                    className="px-4 py-2 rounded-lg text-sm font-medium bg-green-600 text-white border border-green-600 hover:bg-green-700 transition-colors"
-                >
-                    <Plus className="w-4 h-4 mr-1 inline" />
-                    Add Income
-                </button>
+                <div className="flex items-center gap-2">
+                    <VoiceInputButton
+                        onParsedData={handleVoiceIncome}
+                        pageContext="income"
+                    />
+                    <button
+                        onClick={() => setShowModal(true)}
+                        className="px-4 py-2 rounded-lg text-sm font-medium bg-green-600 text-white border border-green-600 hover:bg-green-700 transition-colors"
+                    >
+                        <Plus className="w-4 h-4 mr-1 inline" />
+                        Add Income
+                    </button>
+                </div>
             </div>
 
             {/* Summary Card */}
@@ -144,7 +186,7 @@ const Income = () => {
                                     </div>
                                     <div className="flex items-center space-x-4">
                                         <p className="text-xl font-bold text-green-600 dark:text-green-400">
-                                            +₹{income.amount.toFixed(2)}
+                                            +₹{income.amount?.toFixed(2) || '0.00'}
                                         </p>
                                         <button
                                             onClick={() => handleDelete(income._id)}
@@ -163,7 +205,7 @@ const Income = () => {
             {/* Modal */}
             {showModal && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-700">
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-200 dark:border-gray-700">
                         <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-700">
                             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Add Income</h2>
                         </div>

@@ -64,9 +64,54 @@ const categorizeExpense = async (req, res) => {
   }
 };
 
+const getSmartSuggestions = async (req, res) => {
+  try {
+    const { partialInput } = req.body;
+    const expenses = await Expense.find({ userId: req.user.id }).limit(20).sort({ date: -1 });
+    const suggestions = await geminiService.suggestExpenseCompletion(partialInput, expenses);
+    res.json(suggestions);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching suggestions' });
+  }
+};
+
+const getSmartBudgets = async (req, res) => {
+  try {
+    const expenses = await Expense.find({ userId: req.user.id }).limit(100).sort({ date: -1 });
+    const budgetSuggestions = await geminiService.generateSmartBudgets(expenses);
+    res.json(budgetSuggestions);
+  } catch (error) {
+    res.status(500).json({ message: 'Error generating smart budgets' });
+  }
+};
+
+const predictBill = async (req, res) => {
+  try {
+    const { billId, history, title } = req.body;
+    const prediction = await geminiService.predictBillAmount(history, title);
+    res.json(prediction);
+  } catch (error) {
+    res.status(500).json({ message: 'Error predicting bill' });
+  }
+};
+
+const parseVoice = async (req, res) => {
+  try {
+    const { text } = req.body;
+    const parsedData = await geminiService.parseVoiceExpense(text);
+    res.json(parsedData);
+  } catch (error) {
+    res.status(500).json({ message: 'Error parsing voice input' });
+  }
+};
+
 module.exports = {
   getFinancialAdvice,
   getSpendingPrediction,
   categorizeExpense,
-  handleChat
+  handleChat,
+  getSmartSuggestions,
+  getSmartBudgets,
+  predictBill,
+  parseVoice
 };

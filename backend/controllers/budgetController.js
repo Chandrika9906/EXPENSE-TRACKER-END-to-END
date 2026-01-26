@@ -15,7 +15,9 @@ const createBudget = async (req, res) => {
 
 const getBudgets = async (req, res) => {
   try {
+    console.log('Fetching budgets for user:', req.user._id);
     const budgets = await Budget.find({ userId: req.user._id }).sort({ createdAt: -1 });
+    console.log('Found budgets count:', budgets.length);
 
     // Calculate spending for each budget
     const budgetsWithSpending = await Promise.all(

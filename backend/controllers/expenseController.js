@@ -46,6 +46,7 @@ const getExpenses = async (req, res) => {
     const { category, startDate, endDate, search, page = 1, limit = 10 } = req.query;
 
     const query = { userId: req.user._id };
+    console.log('Fetching expenses for user:', req.user._id);
 
     if (category) query.category = category;
     if (startDate && endDate) {

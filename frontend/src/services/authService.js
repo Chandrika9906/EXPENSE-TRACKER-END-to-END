@@ -1,7 +1,7 @@
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
-const API_URL = 'http://localhost:5001/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 
 const api = axios.create({
   baseURL: API_URL,
@@ -165,6 +165,11 @@ export const incomeService = {
   deleteIncome: (id) => api.delete(`/incomes/${id}`),
 };
 
+export const testService = {
+  seedData: () => api.post('/test/seed'),
+  clearData: () => api.post('/test/clear'),
+};
+
 export const billService = {
   getBills: (params) => api.get('/bills', { params }),
   createBill: (bill) => api.post('/bills', bill),
@@ -173,6 +178,18 @@ export const billService = {
   markAsPaid: (id, data) => api.patch(`/bills/${id}/pay`, data),
   getUpcomingBills: () => api.get('/bills/upcoming'),
   getBillHistory: (id) => api.get(`/bills/${id}/history`)
+};
+
+export const aiService = {
+  getAdvice: () => api.get('/ai/advice'),
+  getPrediction: () => api.get('/ai/prediction'),
+  categorize: (title, merchant) => api.post('/ai/categorize', { title, merchant }),
+  generateNote: (data) => api.post('/ai/generate-note', data),
+  parseVoice: (text) => api.post('/ai/parse-voice', { text }),
+  getSmartSuggestions: (partialInput) => api.post('/ai/smart-suggestions', { partialInput }),
+  getSmartBudgets: () => api.post('/ai/smart-budgets'),
+  predictBill: (data) => api.post('/ai/predict-bill', data),
+  chat: (message) => api.post('/ai/chat', { message })
 };
 
 export const goalService = {
@@ -184,6 +201,11 @@ export const goalService = {
   getGoalProgress: (id) => api.get(`/goals/${id}/progress`),
   completeGoal: (id) => api.patch(`/goals/${id}/complete`),
   getGoalStats: () => api.get('/goals/stats/summary')
+};
+
+export const advancedService = {
+  getInsights: () => api.get('/advanced/insights'),
+  getRollovers: () => api.get('/advanced/rollovers'),
 };
 
 export default api;

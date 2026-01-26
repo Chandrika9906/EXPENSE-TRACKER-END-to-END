@@ -89,9 +89,8 @@ const Analytics = () => {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">Spending Trend</h3>
-              <div className={`text-2xl font-bold flex items-center ${
-                insights.spendingTrend > 0 ? 'text-red-600' : 'text-green-600'
-              }`}>
+              <div className={`text-2xl font-bold flex items-center ${insights.spendingTrend > 0 ? 'text-red-600' : 'text-green-600'
+                }`}>
                 {insights.spendingTrend > 0 ? <TrendingUp className="w-5 h-5 mr-1" /> : <TrendingDown className="w-5 h-5 mr-1" />}
                 {Math.abs(insights.spendingTrend || 0)}%
               </div>
@@ -127,7 +126,7 @@ const Analytics = () => {
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="day" />
                 <YAxis />
-                <Tooltip formatter={(value) => [`₹${value.toFixed(2)}`, 'Avg Spending']} />
+                <Tooltip formatter={(value) => [`₹${(value || 0).toFixed(2)}`, 'Avg Spending']} />
                 <Bar dataKey="avgSpending" fill="#8B5CF6" />
               </BarChart>
             </ResponsiveContainer>
@@ -151,7 +150,7 @@ const Analytics = () => {
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={({ name, value }) => `${name}: ₹${value.toFixed(2)}`}
+                  label={({ name, value }) => `${name}: ₹${(value || 0).toFixed(2)}`}
                   innerRadius={30}
                   outerRadius={60}
                   paddingAngle={5}
@@ -161,7 +160,7 @@ const Analytics = () => {
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(value) => [`₹${value.toFixed(2)}`, 'Amount']} />
+                <Tooltip formatter={(value) => [`₹${(value || 0).toFixed(2)}`, 'Amount']} />
               </PieChart>
             </ResponsiveContainer>
           ) : (
@@ -182,7 +181,7 @@ const Analytics = () => {
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="month" />
                 <YAxis />
-                <Tooltip formatter={(value) => [`₹${value.toFixed(2)}`, 'Amount']} />
+                <Tooltip formatter={(value) => [`₹${(value || 0).toFixed(2)}`, 'Amount']} />
                 <Line type="monotone" dataKey="amount" stroke="#6366F1" strokeWidth={2} />
               </LineChart>
             </ResponsiveContainer>

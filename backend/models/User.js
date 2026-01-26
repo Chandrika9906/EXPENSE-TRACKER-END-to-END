@@ -22,6 +22,22 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: 'INR'
   },
+  language: {
+    type: String,
+    default: 'en'
+  },
+  timezone: {
+    type: String,
+    default: 'Asia/Kolkata'
+  },
+  profileImage: {
+    type: String,
+    default: null
+  },
+  twoFactorEnabled: {
+    type: Boolean,
+    default: false
+  },
   theme: {
     type: String,
     enum: ['light', 'dark'],

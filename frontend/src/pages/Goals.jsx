@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { goalService } from '../services/authService';
+import { goalService, aiService } from '../services/authService';
 import {
     Target,
     Plus,
@@ -20,7 +20,9 @@ import {
     LineChart
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import VoiceInputButton from '../components/VoiceInputButton';
 import CircularProgress from '../components/CircularProgress';
+import GoalSimulator from '../components/GoalSimulator';
 import Confetti from 'react-confetti';
 
 const Goals = () => {
@@ -43,6 +45,21 @@ const Goals = () => {
     });
     const [contributionAmount, setContributionAmount] = useState('');
     const [contributionNotes, setContributionNotes] = useState('');
+
+    const handleVoiceGoal = (voiceData) => {
+        setFormData({
+            title: voiceData.title || '',
+            description: '',
+            category: voiceData.category || 'Other',
+            targetAmount: voiceData.amount ? voiceData.amount.toString() : '',
+            targetDate: voiceData.date || '',
+            priority: 'Medium',
+            color: '#6366F1',
+            icon: '🎯'
+        });
+        setShowModal(true);
+        toast.success('AI filled the goal details!', { icon: '✨' });
+    };
 
     const categoryIcons = {
         'Emergency Fund': { icon: '🏥', color: '#EF4444' },
@@ -73,9 +90,28 @@ const Goals = () => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        
+        // Validation
+        if (!formData.title.trim()) {
+            toast.error('Please enter a goal title');
+            return;
+        }
+        
+        if (!formData.targetAmount || parseFloat(formData.targetAmount) <= 0) {
+            toast.error('Please enter a valid target amount');
+            return;
+        }
+        
+        if (formData.targetDate && new Date(formData.targetDate) <= new Date()) {
+            toast.error('Target date must be in the future');
+            return;
+        }
+        
         try {
             const goalData = {
                 ...formData,
+                title: formData.title.trim(),
+                description: formData.description.trim(),
                 targetAmount: parseFloat(formData.targetAmount),
                 icon: categoryIcons[formData.category]?.icon || '🎯',
                 color: categoryIcons[formData.category]?.color || '#6366F1'
@@ -92,7 +128,7 @@ const Goals = () => {
             closeModal();
         } catch (error) {
             console.error('Error saving goal:', error);
-            toast.error('Failed to save goal');
+            toast.error(error.response?.data?.message || 'Failed to save goal');
         }
     };
 
@@ -110,10 +146,23 @@ const Goals = () => {
 
     const handleContribute = async (e) => {
         e.preventDefault();
+        
+        // Validation
+        if (!contributionAmount || parseFloat(contributionAmount) <= 0) {
+            toast.error('Please enter a valid contribution amount');
+            return;
+        }
+        
+        const amount = parseFloat(contributionAmount);
+        if (amount > selectedGoal.remainingAmount) {
+            toast.error('Contribution amount cannot exceed remaining goal amount');
+            return;
+        }
+        
         try {
             const response = await goalService.addContribution(selectedGoal._id, {
-                amount: parseFloat(contributionAmount),
-                notes: contributionNotes
+                amount: amount,
+                notes: contributionNotes.trim()
             });
 
             // Show confetti if milestone reached or goal completed
@@ -129,7 +178,7 @@ const Goals = () => {
             closeContributeModal();
         } catch (error) {
             console.error('Error adding contribution:', error);
-            toast.error('Failed to add contribution');
+            toast.error(error.response?.data?.message || 'Failed to add contribution');
         }
     };
 
@@ -233,13 +282,19 @@ const Goals = () => {
                         Set targets, track progress, and achieve your dreams
                     </p>
                 </div>
-                <button
-                    onClick={() => setShowModal(true)}
-                    className="bg-primary text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-primary/90 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-                >
-                    <Plus className="w-5 h-5" />
-                    Add Goal
-                </button>
+                <div className="flex items-center gap-2">
+                    <VoiceInputButton
+                        onParsedData={handleVoiceGoal}
+                        pageContext="goals"
+                    />
+                    <button
+                        onClick={() => setShowModal(true)}
+                        className="bg-primary text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-primary/90 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+                    >
+                        <Plus className="w-5 h-5" />
+                        Add Goal
+                    </button>
+                </div>
             </div>
 
             {/* Overall Stats */}
@@ -270,11 +325,14 @@ const Goals = () => {
                         <p className="text-sm opacity-90 mt-1">Completed</p>
                     </div>
                     <div className="text-center">
-                        <p className="text-2xl font-bold">₹{stats.totalSaved.toFixed(0)}</p>
-                        <p className="text-sm opacity-90 mt-1">of ₹{stats.totalTarget.toFixed(0)}</p>
+                        <p className="text-4xl font-bold">₹{stats.totalSaved?.toFixed(0) || '0'}</p>
+                        <p className="text-sm opacity-90 mt-1">of ₹{stats.totalTarget?.toFixed(0) || '0'}</p>
                     </div>
                 </div>
             </div>
+
+            {/* Goal Simulator */}
+            <GoalSimulator goals={goals} />
 
             {/* Filters */}
             <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
@@ -284,8 +342,8 @@ const Goals = () => {
                             key={filter}
                             onClick={() => setActiveFilter(filter)}
                             className={`px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 ${activeFilter === filter
-                                    ? 'bg-primary text-white shadow-md'
-                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                ? 'bg-primary text-white shadow-md'
+                                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                                 }`}
                         >
                             {filter in categoryIcons && <span>{categoryIcons[filter].icon}</span>}
@@ -366,19 +424,19 @@ const Goals = () => {
                                 <div className="flex items-center justify-between text-sm">
                                     <span className="text-gray-600 dark:text-gray-400">Saved</span>
                                     <span className="font-bold text-gray-900 dark:text-white">
-                                        ₹{goal.currentAmount.toFixed(2)}
+                                        ₹{goal.currentAmount?.toFixed(2) || '0.00'}
                                     </span>
                                 </div>
                                 <div className="flex items-center justify-between text-sm">
                                     <span className="text-gray-600 dark:text-gray-400">Target</span>
                                     <span className="font-bold text-gray-900 dark:text-white">
-                                        ₹{goal.targetAmount.toFixed(2)}
+                                        ₹{goal.targetAmount?.toFixed(2) || '0.00'}
                                     </span>
                                 </div>
                                 <div className="flex items-center justify-between text-sm">
                                     <span className="text-gray-600 dark:text-gray-400">Remaining</span>
                                     <span className="font-bold text-primary">
-                                        ₹{goal.remainingAmount.toFixed(2)}
+                                        ₹{goal.remainingAmount?.toFixed(2) || '0.00'}
                                     </span>
                                 </div>
                                 {goal.targetDate && (
@@ -595,7 +653,7 @@ const Goals = () => {
             {/* Contribute Modal */}
             {showContributeModal && selectedGoal && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full">
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
                         <div className="bg-gradient-to-r from-green-500 to-emerald-600 p-6 rounded-t-2xl text-white">
                             <h2 className="text-2xl font-bold flex items-center gap-2">
                                 <DollarSign className="w-6 h-6" />
@@ -638,17 +696,17 @@ const Goals = () => {
                             <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
                                 <div className="flex justify-between text-sm mb-2">
                                     <span className="text-gray-600 dark:text-gray-400">Current</span>
-                                    <span className="font-semibold">₹{selectedGoal.currentAmount.toFixed(2)}</span>
+                                    <span className="font-semibold">₹{selectedGoal.currentAmount?.toFixed(2) || '0.00'}</span>
                                 </div>
                                 <div className="flex justify-between text-sm mb-2">
                                     <span className="text-gray-600 dark:text-gray-400">After contribution</span>
                                     <span className="font-semibold text-green-600">
-                                        ₹{(selectedGoal.currentAmount + (parseFloat(contributionAmount) || 0)).toFixed(2)}
+                                        ₹{(selectedGoal.currentAmount + (parseFloat(contributionAmount) || 0))?.toFixed(2) || '0.00'}
                                     </span>
                                 </div>
                                 <div className="flex justify-between text-sm">
                                     <span className="text-gray-600 dark:text-gray-400">Target</span>
-                                    <span className="font-semibold">₹{selectedGoal.targetAmount.toFixed(2)}</span>
+                                    <span className="font-semibold">₹{selectedGoal.targetAmount?.toFixed(2) || '0.00'}</span>
                                 </div>
                             </div>
 

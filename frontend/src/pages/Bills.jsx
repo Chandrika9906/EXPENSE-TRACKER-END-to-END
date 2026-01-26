@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { billService } from '../services/authService';
+import { aiService, billService } from '../services/authService';
+import VoiceInputButton from '../components/VoiceInputButton';
 import {
     CreditCard,
     Plus,
@@ -13,7 +14,9 @@ import {
     Trash2,
     X,
     History,
-    TrendingUp
+    TrendingUp,
+    Sparkles,
+    Loader2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -25,6 +28,7 @@ const Bills = () => {
     const [showHistoryModal, setShowHistoryModal] = useState(false);
     const [selectedBill, setSelectedBill] = useState(null);
     const [paymentHistory, setPaymentHistory] = useState([]);
+    const [isPredicting, setIsPredicting] = useState(false);
     const [formData, setFormData] = useState({
         title: '',
         amount: '',
@@ -36,6 +40,51 @@ const Bills = () => {
         notes: '',
         autoCreateExpense: true
     });
+
+    const handleVoiceBill = (voiceData) => {
+        setFormData({
+            title: voiceData.title || '',
+            amount: voiceData.amount ? voiceData.amount.toString() : '',
+            category: voiceData.category || 'Utilities',
+            dueDate: voiceData.date || '',
+            isRecurring: false,
+            recurringInterval: 'monthly',
+            reminderDays: 3,
+            notes: `Voice entry (${Math.round(voiceData.confidence * 100)}% confidence)`,
+            autoCreateExpense: true
+        });
+        setShowModal(true);
+        toast.success('AI filled the bill details!', { icon: '✨' });
+    };
+
+    const handlePredictAmount = async () => {
+        if (!formData.title) {
+            toast.error('Please enter a bill title first');
+            return;
+        }
+
+        try {
+            setIsPredicting(true);
+            const history = selectedBill ? await billService.getBillHistory(selectedBill._id) : { data: [] };
+
+            const response = await aiService.predictBill({
+                title: formData.title,
+                history: history.data
+            });
+
+            if (response.data.prediction > 0) {
+                setFormData({ ...formData, amount: response.data.prediction.toString() });
+                toast.success(`Predicted amount: ₹${response.data.prediction}`, { icon: '🤖' });
+            } else {
+                toast.error('Not enough history to predict amount');
+            }
+        } catch (error) {
+            console.error('Prediction error:', error);
+            toast.error('Failed to predict amount');
+        } finally {
+            setIsPredicting(false);
+        }
+    };
 
     useEffect(() => {
         fetchBills();
@@ -56,19 +105,44 @@ const Bills = () => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        
+        // Validation
+        if (!formData.title.trim()) {
+            toast.error('Please enter a bill title');
+            return;
+        }
+        
+        if (!formData.amount || parseFloat(formData.amount) <= 0) {
+            toast.error('Please enter a valid amount');
+            return;
+        }
+        
+        if (!formData.dueDate) {
+            toast.error('Please select a due date');
+            return;
+        }
+        
         try {
+            const billData = {
+                ...formData,
+                title: formData.title.trim(),
+                amount: parseFloat(formData.amount),
+                reminderDays: parseInt(formData.reminderDays) || 3,
+                notes: formData.notes.trim()
+            };
+            
             if (selectedBill) {
-                await billService.updateBill(selectedBill._id, formData);
+                await billService.updateBill(selectedBill._id, billData);
                 toast.success('Bill updated successfully!');
             } else {
-                await billService.createBill(formData);
+                await billService.createBill(billData);
                 toast.success('Bill created successfully!');
             }
             fetchBills();
             closeModal();
         } catch (error) {
             console.error('Error saving bill:', error);
-            toast.error('Failed to save bill');
+            toast.error(error.response?.data?.message || 'Failed to save bill');
         }
     };
 
@@ -235,13 +309,19 @@ const Bills = () => {
                         Manage your bills and never miss a payment
                     </p>
                 </div>
-                <button
-                    onClick={() => setShowModal(true)}
-                    className="bg-primary text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-primary/90 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-                >
-                    <Plus className="w-5 h-5" />
-                    Add Bill
-                </button>
+                <div className="flex items-center gap-2">
+                    <VoiceInputButton
+                        onParsedData={handleVoiceBill}
+                        pageContext="bills"
+                    />
+                    <button
+                        onClick={() => setShowModal(true)}
+                        className="bg-primary text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-primary/90 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+                    >
+                        <Plus className="w-5 h-5" />
+                        Add Bill
+                    </button>
+                </div>
             </div>
 
             {/* Stats Cards */}
@@ -292,8 +372,8 @@ const Bills = () => {
                             key={filter}
                             onClick={() => setActiveFilter(filter)}
                             className={`px-4 py-2 rounded-lg font-medium transition-all ${activeFilter === filter
-                                    ? 'bg-primary text-white shadow-md'
-                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                ? 'bg-primary text-white shadow-md'
+                                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                                 }`}
                         >
                             {filter.charAt(0).toUpperCase() + filter.slice(1)}
@@ -363,7 +443,7 @@ const Bills = () => {
                                         Amount
                                     </span>
                                     <span className="text-xl font-bold text-gray-900 dark:text-white">
-                                        ₹{bill.amount.toFixed(2)}
+                                        ₹{bill.amount?.toFixed(2) || '0.00'}
                                     </span>
                                 </div>
                                 <div className="flex items-center justify-between">
@@ -456,15 +536,30 @@ const Bills = () => {
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                         Amount *
                                     </label>
-                                    <input
-                                        type="number"
-                                        required
-                                        step="0.01"
-                                        value={formData.amount}
-                                        onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                                        className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent dark:bg-gray-700 dark:text-white"
-                                        placeholder="0.00"
-                                    />
+                                    <div className="relative">
+                                        <input
+                                            type="number"
+                                            required
+                                            step="0.01"
+                                            value={formData.amount}
+                                            onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                                            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent dark:bg-gray-700 dark:text-white"
+                                            placeholder="0.00"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={handlePredictAmount}
+                                            disabled={isPredicting}
+                                            className="absolute right-2 top-2 p-1.5 text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                                            title="Predict amount using AI"
+                                        >
+                                            {isPredicting ? (
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                            ) : (
+                                                <Sparkles className="w-4 h-4" />
+                                            )}
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <div>
@@ -629,7 +724,7 @@ const Bills = () => {
                                         >
                                             <div className="flex items-center justify-between mb-2">
                                                 <span className="text-lg font-bold text-gray-900 dark:text-white">
-                                                    ₹{payment.amount.toFixed(2)}
+                                                    ₹{payment.amount?.toFixed(2) || '0.00'}
                                                 </span>
                                                 <span className="text-sm text-gray-600 dark:text-gray-400">
                                                     {new Date(payment.paidDate).toLocaleDateString()}
